@@ -25,26 +25,23 @@ jobs:
       - name: Install Vulkan SDK
         shell: pwsh
         run: |
-          $ProgressPreference = "SilentlyContinue"
+          choco install vulkan-sdk -y --no-progress
 
-          $version = "1.4.350.0"
-          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe"
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
 
-          Invoke-WebRequest -Uri $url -OutFile VulkanSDK.exe
+          if (-not $env:VULKAN_SDK) {
+            $sdk = Get-ChildItem "C:\VulkanSDK" -Directory |
+              Sort-Object Name -Descending |
+              Select-Object -First 1
 
-          Start-Process .\VulkanSDK.exe `
-            -ArgumentList "/S" `
-            -Wait `
-            -WindowStyle Hidden
-
-          $sdk = "C:\VulkanSDK\$version"
-
-          if (!(Test-Path $sdk)) {
-            throw "Vulkan SDK installation failed."
+            $env:VULKAN_SDK = $sdk.FullName
           }
 
-          "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "$sdk\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "VULKAN_SDK=$env:VULKAN_SDK" | Out-File $env:GITHUB_ENV -Append
+          "$env:VULKAN_SDK\Bin" | Out-File $env:GITHUB_PATH -Append
+
+          Write-Host "Using Vulkan SDK: $env:VULKAN_SDK"
 
       - name: Configure
         shell: pwsh
@@ -54,7 +51,8 @@ jobs:
             -A x64 `
             -DGGML_VULKAN=ON `
             -DVulkan_INCLUDE_DIR="$env:VULKAN_SDK\Include" `
-            -DVulkan_LIBRARY="$env:VULKAN_SDK\Lib\vulkan-1.lib"
+            -DVulkan_LIBRARY="$env:VULKAN_SDK\Lib\vulkan-1.lib" `
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         shell: pwsh
@@ -64,10 +62,13 @@ jobs:
       - name: Prepare artifact
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          New-Item -ItemType Directory -Force artifact | Out-Null
 
-          Get-ChildItem build -Recurse -Filter *.exe | Copy-Item -Destination artifact -Force
-          Get-ChildItem build -Recurse -Filter *.dll | Copy-Item -Destination artifact -Force
+          Get-ChildItem build -Recurse -Include *.exe |
+            Copy-Item -Destination artifact -Force
+
+          Get-ChildItem build -Recurse -Include *.dll |
+            Copy-Item -Destination artifact -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
