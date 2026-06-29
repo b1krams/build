@@ -1,0 +1,60 @@
+name: Build whisper.cpp (Windows Vulkan)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Install Vulkan SDK
+        shell: powershell
+        run: |
+          choco install vulkan-sdk -y
+
+      - name: Configure
+        shell: powershell
+        run: |
+          cmake -B build `
+            -DGGML_VULKAN=ON `
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: powershell
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Prepare artifact
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact
+
+          Copy-Item build\bin\Release\whisper-cli.exe artifact\ -ErrorAction SilentlyContinue
+          Copy-Item build\bin\Release\whisper-server.exe artifact\ -ErrorAction SilentlyContinue
+          Copy-Item build\bin\Release\whisper-bench.exe artifact\ -ErrorAction SilentlyContinue
+          Copy-Item build\bin\Release\*.dll artifact\ -ErrorAction SilentlyContinue
+
+          if (Test-Path build\bin\Release\ggml-vulkan.dll) {
+            Copy-Item build\bin\Release\ggml-vulkan.dll artifact\
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whispercpp-windows-vulkan
+          path: artifact
